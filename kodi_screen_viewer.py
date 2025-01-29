@@ -15,6 +15,7 @@
 
 import base64
 import http.client
+import itertools
 import os
 import socket
 import struct
@@ -28,7 +29,7 @@ from fractions import Fraction
 
 CLIENT_ID = int(time.time())
 SCREENCAST_DIR = "/var/data/userdata/screencast"
-SCREENCAST_FILENAME = "image.png"
+SCREENCAST_FILENAME = "image{idx}.png"
 REFRESH_INTERVAL = 0.3
 BACKOFF_INTERVAL = 0.2
 
@@ -73,7 +74,6 @@ def main() -> None:
     http_port = int(sys.argv[2])
     event_server_port = 9777
     screencast_dir = sys.argv[3] if len(sys.argv) > 3 else SCREENCAST_DIR
-    path = f"{screencast_dir}/{SCREENCAST_FILENAME}"
     header_value = ""
     refresh_interval = float(os.getenv("KODI_REFRESH_INTERVAL", "") or REFRESH_INTERVAL)
     username = os.getenv("KODI_USERNAME", "")
@@ -90,13 +90,15 @@ def main() -> None:
     root.update_idletasks()
     root.update()
 
-    quoted_path = urllib.parse.quote(path)
-    vfs_url = f"http://{host}:{http_port}/vfs/{quoted_path}"
-    msg = construct_action_message("TakeScreenshot", path)
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.connect((host, event_server_port))
 
-        while True:
+        for idx in itertools.cycle(range(10)):
+            path = f"{screencast_dir}/{SCREENCAST_FILENAME.format(idx=idx)}"
+            quoted_path = urllib.parse.quote(path)
+            vfs_url = f"http://{host}:{http_port}/vfs/{quoted_path}"
+            msg = construct_action_message("TakeScreenshot", path)
+
             sock.sendall(msg)
 
             time.sleep(refresh_interval)
