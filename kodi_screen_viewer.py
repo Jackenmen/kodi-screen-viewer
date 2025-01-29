@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import base64
+import http.client
 import os
 import socket
 import struct
@@ -28,7 +29,8 @@ from fractions import Fraction
 CLIENT_ID = int(time.time())
 SCREENCAST_DIR = "/var/data/userdata/screencast"
 SCREENCAST_FILENAME = "image.png"
-REFRESH_INTERVAL = 0.2
+REFRESH_INTERVAL = 0.3
+BACKOFF_INTERVAL = 0.2
 
 
 def construct_action_message(action: str, *args: str) -> bytes:
@@ -73,6 +75,7 @@ def main() -> None:
     screencast_dir = sys.argv[3] if len(sys.argv) > 3 else SCREENCAST_DIR
     path = f"{screencast_dir}/{SCREENCAST_FILENAME}"
     header_value = ""
+    refresh_interval = float(os.getenv("KODI_REFRESH_INTERVAL", "") or REFRESH_INTERVAL)
     username = os.getenv("KODI_USERNAME", "")
     password = os.getenv("KODI_PASSWORD", "")
     if username and password:
@@ -96,12 +99,24 @@ def main() -> None:
         while True:
             sock.sendall(msg)
 
-            time.sleep(REFRESH_INTERVAL)
+            time.sleep(refresh_interval)
             req = urllib.request.Request(vfs_url)
             if header_value:
                 req.add_header("Authorization", header_value)
-            with urllib.request.urlopen(req) as resp:
-                data = resp.read()
+            for _ in range(3):
+                with urllib.request.urlopen(req) as resp:
+                    try:
+                        data = resp.read()
+                    except http.client.IncompleteRead:
+                        print(
+                            "Failed to read screenshot, might not be generated yet..."
+                            " If this happens regularly, you might need to set"
+                            " KODI_REFRESH_INTERVAL env var to a higher value"
+                            f" (currently at {refresh_interval})."
+                        )
+                        time.sleep(BACKOFF_INTERVAL)
+                    else:
+                        break
 
             if not root.children:
                 # exit if root window destroyed
